@@ -94,6 +94,10 @@ public void OnPluginStart()
 	g_cBlockSpam = CreateConVar("sm_consolechatmanager_block_spam", "1", "Blocks console messages that repeat the same message.", FCVAR_NONE, true, 0.0, true, 1.0);
 	g_cBlockSpamDelay = CreateConVar("sm_consolechatmanager_block_spam_delay", "1", "Time to wait before printing the same message", FCVAR_NONE, true, 1.0, true, 60.0);
 
+	g_cHudPosition.AddChangeHook(OnConVarChanged);
+	g_cHudColor.AddChangeHook(OnConVarChanged);
+	g_cHudSymbols.AddChangeHook(OnConVarChanged);
+
 	AddCommandListener(SayConsole, "say");
 
 	AutoExecConfig(true);
@@ -111,6 +115,11 @@ public void OnMapStart()
 {
 	if (g_EnableTranslation.BoolValue)
 		ReadT();
+}
+
+public void OnConVarChanged(ConVar convar, char[] oldValue, char[] newValue)
+{
+	GetConVars();
 }
 
 public void Event_RoundStart(Handle event, const char[] name, bool dontBroadcast)
