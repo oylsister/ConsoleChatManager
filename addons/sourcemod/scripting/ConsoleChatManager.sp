@@ -25,9 +25,12 @@
 
 #pragma newdecls required
 
-#define VERSION 			"2.0"
+#define VERSION 			"2.1"
 
 #define MAXLENGTH_INPUT		512
+
+#define NORMALHUD 1
+#define CSGO_WARMUPTIMER 2
 
 Handle kv;
 char Path[PLATFORM_MAX_PATH];
@@ -44,6 +47,8 @@ ConVar g_cHudColor;
 ConVar g_cHudSymbols;
 ConVar g_cHudDuration;
 ConVar g_cHudDurationFadeOut;
+ConVar g_cHudType;
+ConVar g_cHudHtmlColor;
 
 float HudPos[2];
 int HudColor[3];
@@ -62,10 +67,14 @@ int lastMessageTime = -1;
 
 int roundStartedTime = -1;
 
+int hudtype;
+
+char htmlcolor[64];
+
 public Plugin myinfo = 
 {
 	name = "ConsoleChatManager",
-	author = "Franc1sco Steam: franug, maxime1907, inGame, AntiTeal",
+	author = "Franc1sco Steam: franug, maxime1907, inGame, AntiTeal, Oylsister",
 	description = "Interact with console messages",
 	version = VERSION,
 	url = ""
@@ -90,6 +99,8 @@ public void OnPluginStart()
 	g_cHudPosition = CreateConVar("sm_consolechatmanager_hud_position", "-1.0 0.125", "The X and Y position for the hud.");
 	g_cHudColor = CreateConVar("sm_consolechatmanager_hud_color", "0 255 0", "RGB color value for the hud.");
 	g_cHudSymbols = CreateConVar("sm_consolechatmanager_hud_symbols", "1", "Determines whether >> and << are wrapped around the text.");
+	g_cHudType = CreateConVar("sm_consolechatmanager_hud_type", "1.0", "Specify the type of Hud Msg [1 = SendTextHud, 2 = CS:GO Warmup Timer]", _, true, 1.0, true, 2.0);
+	g_cHudHtmlColor = CreateConVar("sm_consolecharmanager_hud_htmlcolor", "#6CFF00", "Html color for second type of Hud Message");
 
 	g_cBlockSpam = CreateConVar("sm_consolechatmanager_block_spam", "1", "Blocks console messages that repeat the same message.", FCVAR_NONE, true, 0.0, true, 1.0);
 	g_cBlockSpamDelay = CreateConVar("sm_consolechatmanager_block_spam_delay", "1", "Time to wait before printing the same message", FCVAR_NONE, true, 1.0, true, 60.0);
@@ -97,6 +108,7 @@ public void OnPluginStart()
 	g_cHudPosition.AddChangeHook(OnConVarChanged);
 	g_cHudColor.AddChangeHook(OnConVarChanged);
 	g_cHudSymbols.AddChangeHook(OnConVarChanged);
+	g_cHudType.AddChangeHook(OnConVarChanged);
 
 	AddCommandListener(SayConsole, "say");
 
@@ -165,6 +177,10 @@ public void GetConVars()
 	ColorStringToArray(ColorValue, HudColor);
 
 	HudSymbols = g_cHudSymbols.BoolValue;
+
+	hudtype = g_cHudType.IntValue;
+
+	g_cHudHtmlColor.GetString(htmlcolor, sizeof(htmlcolor));
 }
 
 public void ColorStringToArray(const char[] sColorString, int aColor[3])
@@ -413,7 +429,18 @@ public Action SayConsole(int client, const char[] command, int args)
 			CPrintToChat(i, sFinalText);
 
 			if (g_EnableHud.BoolValue && !isCountable)
-				SendHudMsg(i, sText, false);
+			{
+				if(isCSGO)
+				{
+					if(hudtype == NORMALHUD)
+						SendHudMsg(i, sText, false);
+
+					else
+						SendNewHudMsg(i, sText, false);
+				}
+				else
+					SendHudMsg(i, sText, false);
+			}
 		}
 	}
 
@@ -488,7 +515,7 @@ public void InitCountDown(const char[] text)
 	timerHandle = CreateDataTimer(1.0, RepeatMsg, TimerPack, TIMER_REPEAT);
 
 	char text2[MAXLENGTH_INPUT + 10];
-	if	(HudSymbols)
+	if	(HudSymbols && hudtype == NORMALHUD)
 		Format(text2, sizeof(text2), ">> %s <<", text);
 	else
 		Format(text2, sizeof(text2), "%s", text);
@@ -496,7 +523,18 @@ public void InitCountDown(const char[] text)
 	TimerPack.WriteString(text2);
 
 	for (int i = 1; i <= MAXPLAYERS + 1; i++)
-		SendHudMsg(i, text2, true);
+	{
+		if(isCSGO)
+		{
+			if(hudtype == NORMALHUD)
+				SendHudMsg(i, text2, true);
+			
+			else
+				SendNewHudMsg(i, text2, true);
+		}
+		else
+			SendHudMsg(i, text2, true);
+	}
 }
 
 public Action RepeatMsg(Handle timer, Handle pack)
@@ -526,8 +564,18 @@ public Action RepeatMsg(Handle timer, Handle pack)
 	ReplaceString(string, sizeof(string), sONumber, sNumber);
 
 	for (int i = 1; i <= MAXPLAYERS + 1; i++)
-		SendHudMsg(i, string, true);
+	{
+		if(isCSGO)
+		{
+			if(hudtype == NORMALHUD)
+				SendHudMsg(i, string, true);
 
+			else
+				SendNewHudMsg(i, string, true);
+		}
+		else
+			SendHudMsg(i, string, true);
+	}
 	return Plugin_Handled;
 }
 
@@ -538,4 +586,67 @@ public void SendHudMsg(int client, const char[] szMessage, bool isCountdown)
 	float duration = isCountdown ? 1.0 : g_cHudDuration.FloatValue;
 	SetHudTextParams(HudPos[0], HudPos[1], duration, HudColor[0], HudColor[1], HudColor[2], 255, 0, 0.0, 0.0, g_cHudDurationFadeOut.FloatValue);
 	ShowSyncHudText(client, HudSync, szMessage);
+}
+
+public void SendNewHudMsg(int client, const char[] szMessage, bool isCountdown)
+{
+	if (!IsValidClient(client))
+		return;
+
+	// if it's not csgo engine, then return
+	if (!isCSGO)
+		return;
+
+	// Event use int for duration
+	int duration = isCountdown ? 2 : RoundToNearest(g_cHudDuration.FloatValue);
+
+	// We don't want to mess with original constant char
+	char originalmsg[MAX_BUFFER_LENGTH + 10];
+	Format(originalmsg, sizeof(originalmsg), "%s", szMessage);
+
+	int orilen = strlen(originalmsg);
+
+	// Need to remove These Html symbol from console message or it will get messy.
+	ReplaceString(originalmsg, orilen, "<", "", false);
+	ReplaceString(originalmsg, orilen, ">", "", false);
+
+	// Put color in to the message
+	char newmessage[MAX_BUFFER_LENGTH + 10];
+	int newlen = strlen(newmessage);
+
+	// If the message is too long we need to reduce font size.
+	if(newlen <= 65)
+
+		// Put color in to the message (These html format is fine)
+		Format(newmessage, sizeof(newmessage), "<span class='fontSize-l'><span color='%s'>%s</span></span>", htmlcolor, originalmsg);
+
+	else if(newlen <= 100)
+		Format(newmessage, sizeof(newmessage), "<span class='fontSize-m'><span color='%s'>%s</span></span>", htmlcolor, originalmsg);
+
+	else
+		Format(newmessage, sizeof(newmessage), "<span class='fontSize-sm'><span color='%s'>%s</span></span>", htmlcolor, originalmsg);
+	
+	// Fire the message to player (https://github.com/Kxnrl/CSGO-HtmlHud/blob/main/fys.huds.sp#L167)
+	Event event = CreateEvent("show_survival_respawn_status");
+	if (event != null)
+	{
+		event.SetString("loc_token", newmessage);
+		event.SetInt("duration", duration);
+		event.SetInt("userid", -1);
+		if(client == -1)
+		{
+			for(int i = 1; i <= MaxClients; i++) 
+			{
+				if(IsClientInGame(i) && !IsFakeClient(i))
+				{
+					event.FireToClient(i);
+				}
+			}
+		}
+		else
+		{
+			event.FireToClient(client);
+		}
+		event.Cancel(); 
+	}
 }
