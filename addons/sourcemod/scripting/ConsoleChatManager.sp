@@ -21,7 +21,6 @@
 #include <sdktools>
 #include <multicolors>
 #include <geoip>
-#include <emitsoundany>
 
 #pragma newdecls required
 
@@ -222,7 +221,7 @@ void CheckSounds()
 			if(!StrEqual(buffer, "default"))
 			{
 				if(!isCSGO) PrecacheSound(buffer);
-				else PrecacheSoundAny(buffer);
+				else PrecacheSound(buffer);
 				
 				Format(buffer, 255, "sound/%s", buffer);
 				AddFileToDownloadsTable(buffer);
@@ -449,7 +448,7 @@ public Action SayConsole(int client, const char[] command, int args)
 		if(!StrEqual(soundp, "none"))
 		{
 			if(!isCSGO || StrEqual(soundp, "default")) EmitSoundToAll(soundt);
-			else EmitSoundToAllAny(soundt);
+			else EmitSoundToAll(soundt);
 		}
 
 		if(KvJumpToKey(kv, "hinttext"))
